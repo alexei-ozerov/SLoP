@@ -30,7 +30,7 @@ type SpringLogStruct struct {
 }
 
 func processLogLine(line string, logObjectBuffer *SpringLogStruct) (logLine *SpringLogStruct, err error) {
-	var firstLineRegexp = regexp.MustCompile(`^(?P<time>\d{4}-\d{1,2}-\d{1,2}T\d{1,2}:\d{1,2}:\d{1,2}.\d{3}Z)\s+(?P<level>[^\s]+)\s+(?P<pid>\d+).*?\[\s+(?P<thread>.*)\]\s+(?P<class>.*)\s+:\s+(?P<message>.*)`)
+	var firstLineRegexp = regexp.MustCompile(`^(?P<time>\d{4}-\d{1,2}-\d{1,2}T\d{1,2}:\d{1,2}:\d{1,2}.\d{3}-\d{1,2}:\d{1,2})\s+(?P<level>[^\s]+)\s+(?P<pid>\d+).*?\[\s+(?P<thread>.*)\]\s+(?P<class>.*)\s+:\s+(?P<message>.*)`)
 	var continuedRegexp = regexp.MustCompile(`^\s+at\s+.*`)
 
 	match := firstLineRegexp.FindStringSubmatch(line)
