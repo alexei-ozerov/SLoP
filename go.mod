@@ -1,4 +1,4 @@
-module SLoP
+module slop
 
 go 1.24
 

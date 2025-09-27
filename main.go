@@ -30,7 +30,7 @@ type SpringLogStruct struct {
 }
 
 func processLogLine(line string, logObjectBuffer *SpringLogStruct) (logLine *SpringLogStruct, err error) {
-	var firstLineRegexp = regexp.MustCompile(`^(?P<time>\d{4}-\d{1,2}-\d{1,2}T\d{1,2}:\d{1,2}:\d{1,2}.\d{3}-\d{1,2}:\d{1,2})\s+(?P<level>[^\s]+)\s+(?P<pid>\d+).*?\[\s+(?P<thread>.*)\]\s+(?P<class>.*)\s+:\s+(?P<message>.*)`)
+	var firstLineRegexp = regexp.MustCompile(`^(?P<time>\d{4}-\d{1,2}-\d{1,2}T\d{1,2}:\d{1,2}:\d{1,2}.\d{3}-\d{1,2}:\d{1,2})\s+(?P<level>[^\s]+)\s+(?P<pid>\d+).*?\[\s?(?P<thread>.*)\]\s+(?P<class>.*)\s+:\s+(?P<message>.*)`)
 	var continuedRegexp = regexp.MustCompile(`^\s+at\s+.*`)
 
 	match := firstLineRegexp.FindStringSubmatch(line)
@@ -61,6 +61,12 @@ func processLogLine(line string, logObjectBuffer *SpringLogStruct) (logLine *Spr
 			springLogLine.Raw += line
 
 			return &springLogLine, nil
+		} else {
+			// TODO: fix this later, as we should match a consistent pattern instead of just throwing any
+			//       in-between piece of log into the object.
+			springLogLine := *logObjectBuffer
+			springLogLine.ParseStatus = 2 // Log appended
+			springLogLine.Raw += line
 		}
 
 		return nil, nil
@@ -108,17 +114,46 @@ func readStdin(ctx ParserContext) error {
 	return scanner.Err()
 }
 
+func checkFilter(ctx ParserContext, logObject *SpringLogStruct) bool {
+	if strings.Contains(logObject.Raw, ctx.Filter) {
+		return true
+	}
+
+	return false
+}
+
+func checkLevel(ctx ParserContext, logObject *SpringLogStruct) bool {
+	if logObject.Level == ctx.Level {
+		return true
+	}
+
+	return false
+}
+
 func printResults(ctx ParserContext, logObject *SpringLogStruct) error {
+	filterPassed := true
+
 	// If level filter exists
 	if ctx.Level != "" {
 		// Only print object if it matches filter
-		if logObject.Level == ctx.Level {
-			if err := prettyPrintJson(logObject); err != nil {
-				return err
-			}
+		filterPassed = checkLevel(ctx, logObject)
+
+		if filterPassed == false {
+			return nil
 		}
-	} else {
-		// If no level filter set, print object
+
+		if ctx.Filter != "" {
+			// Only print object if it matches filter
+			filterPassed = checkFilter(ctx, logObject)
+		}
+	}
+
+	if ctx.Filter != "" && ctx.Level == "" {
+		// Only print object if it matches filter
+		filterPassed = checkFilter(ctx, logObject)
+	}
+
+	if filterPassed {
 		if err := prettyPrintJson(logObject); err != nil {
 			return err
 		}
@@ -150,10 +185,11 @@ func main() {
 
 	// Parse Cli Opts
 	levelFilter := flag.String("level", "", "Log level you want to filter for")
+	contentFilter := flag.String("grep", "", "Search term you want to filter for")
 	flag.Parse()
 
 	options := ParserContext{
-		Filter: "",
+		Filter: *contentFilter,
 		Level:  *levelFilter,
 	}
 
