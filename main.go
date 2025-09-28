@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"path/filepath"
 	"log/slog"
 	"os"
 	"regexp"
@@ -71,8 +72,6 @@ func processLogLine(line string, logObjectBuffer *SpringLogStruct) (logLine *Spr
 
 			return &springLogLine, nil
 		}
-
-		return nil, nil
 	}
 }
 
@@ -182,16 +181,36 @@ func prettyPrintJson(lineObj *SpringLogStruct) error {
 	return nil
 }
 
+func setupAppDir() error {
+	homeDirectory, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+
+	configPath := filepath.Join(homeDirectory, ".slop")
+	createErr := os.MkdirAll(configPath, os.ModePerm); if err != nil {
+		return createErr
+	}
+
+	return nil
+}
+
 func main() {
 	// Setup logger
 	logger := zlog.New()
 	slog.SetDefault(logger)
 
-	// Parse Cli Opts
+	// Setup Application Directory
+	setupErr := setupAppDir(); if setupErr != nil {
+		slog.Error("Error encountered setting up application directory.", "Error", setupErr)
+	}
+
+	// Parse cli opts & construct config struct 
 	levelFilter := flag.String("level", "", "Log level you want to filter for")
 	contentFilter := flag.String("grep", "", "Search term you want to filter for")
 	flag.Parse()
 
+	// TODO: Add configuration values from local config here
 	options := ParserContext{
 		Filter: *contentFilter,
 		Level:  *levelFilter,
