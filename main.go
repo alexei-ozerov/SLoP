@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"log/slog"
 	"os"
 	"regexp"
@@ -67,6 +68,8 @@ func processLogLine(line string, logObjectBuffer *SpringLogStruct) (logLine *Spr
 			springLogLine := *logObjectBuffer
 			springLogLine.ParseStatus = 2 // Log appended
 			springLogLine.Raw += line
+
+			return &springLogLine, nil
 		}
 
 		return nil, nil
@@ -168,12 +171,13 @@ func prettyPrintJson(lineObj *SpringLogStruct) error {
 		return err
 	}
 
-	var prettyJSON bytes.Buffer
-	indentErr := json.Indent(&prettyJSON, logObject, "", "\t")
+	var indentedJson bytes.Buffer
+	indentErr := json.Indent(&indentedJson, logObject, "", "\t")
 	if indentErr != nil {
 		return indentErr
 	}
-	slog.Info("Line deserialized: ", "JsonObject", prettyJSON.String())
+
+	fmt.Println(indentedJson.String())
 
 	return nil
 }
