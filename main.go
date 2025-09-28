@@ -6,9 +6,9 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"path/filepath"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -176,6 +176,7 @@ func prettyPrintJson(lineObj *SpringLogStruct) error {
 		return indentErr
 	}
 
+	// TODO: Find a way to pretty-print this log output.
 	fmt.Println(indentedJson.String())
 
 	return nil
@@ -188,7 +189,8 @@ func setupAppDir() error {
 	}
 
 	configPath := filepath.Join(homeDirectory, ".slop")
-	createErr := os.MkdirAll(configPath, os.ModePerm); if err != nil {
+	createErr := os.MkdirAll(configPath, os.ModePerm)
+	if createErr != nil {
 		return createErr
 	}
 
@@ -201,11 +203,12 @@ func main() {
 	slog.SetDefault(logger)
 
 	// Setup Application Directory
-	setupErr := setupAppDir(); if setupErr != nil {
+	setupErr := setupAppDir()
+	if setupErr != nil {
 		slog.Error("Error encountered setting up application directory.", "Error", setupErr)
 	}
 
-	// Parse cli opts & construct config struct 
+	// Parse cli opts & construct config struct
 	levelFilter := flag.String("level", "", "Log level you want to filter for")
 	contentFilter := flag.String("grep", "", "Search term you want to filter for")
 	flag.Parse()
