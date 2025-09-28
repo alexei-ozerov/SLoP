@@ -1,0 +1,10 @@
+2025-09-18T11:18:46.890Z  INFO 139141 --- [myapp] [           main] o.s.b.d.f.logexample.MyApplication       : Starting MyApplication using Java 17.0.16 with PID 139141 (/opt/apps/myapp.jar started by myuser in /opt/apps/)
+2025-09-18T11:18:52.218Z  ERROR 139141 --- [myapp] [           main] Exception in thread "main" java.lang.RuntimeException : Something has gone wrong, aborting!
+    at com.myproject.module.MyProject.badMethod(MyProject.java:22)
+    at com.myproject.module.MyProject.oneMoreMethod(MyProject.java:18)
+    at com.myproject.module.MyProject.anotherMethod(MyProject.java:14)
+    at com.myproject.module.MyProject.someMethod(MyProject.java:10)
+    at com.myproject.module.MyProject.main(MyProject.java:6)
+2025-09-18T11:18:52.249Z  INFO 139141 --- [myapp] [tomcat-shutdown] o.s.b.w.e.tomcat.GracefulShutdown        : Graceful shutdown complete
+2025-09-18T11:18:46.890Z  INFO 139141 --- [myapp] [           main] o.s.b.d.f.logexample.MyApplication       : Starting MyApplication using Java 17.0.16 with PID 139141 (/opt/apps/myapp.jar started by myuser in /opt/apps/)
+
