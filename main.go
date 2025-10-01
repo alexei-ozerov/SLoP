@@ -18,6 +18,7 @@ import (
 type ParserContext struct {
 	Filter string
 	Level  string
+	Pretty bool
 }
 
 type SpringLogStruct struct {
@@ -32,12 +33,11 @@ type SpringLogStruct struct {
 }
 
 func processLogLine(line string, logObjectBuffer *SpringLogStruct) (logLine *SpringLogStruct, err error) {
-	var firstLineRegexp = regexp.MustCompile(`^(?P<time>\d{4}-\d{1,2}-\d{1,2}T\d{1,2}:\d{1,2}:\d{1,2}.\d{3}-\d{1,2}:\d{1,2})\s+(?P<level>[^\s]+)\s+(?P<pid>\d+).*?\[\s?(?P<thread>.*)\]\s+(?P<class>.*)\s+:\s+(?P<message>.*)`)
-	var continuedRegexp = regexp.MustCompile(`^\s+at\s+.*`)
+	var firstLineRegexp = regexp.MustCompile(`^(?P<time>\d{4}-\d{1,2}-\d{1,2}T\d{1,2}:\d{1,2}:\d{1,2}[,.]\d{3}.*?)\s+(?P<level>[A-Z]+)\s+(?P<pid>\d+)\s+---\s+\[(?P<thread>.*?)\]\s+(?P<class>.*?)\s*:\s*(?P<message>.*)`)
+	var continuedRegexp = regexp.MustCompile(`^\s+at\s+.*|^\s*Caused by:.*`)
 
 	match := firstLineRegexp.FindStringSubmatch(line)
 
-	// We've found a match for the expected first line of a SpringBoot log
 	if len(match) > 0 {
 		if logObjectBuffer.ParseStatus != 0 {
 			logObjectBuffer.ParseStatus = 3 // Previous line completed
@@ -49,30 +49,24 @@ func processLogLine(line string, logObjectBuffer *SpringLogStruct) (logLine *Spr
 			Pid:         strings.Join(strings.Fields(match[3]), " "),
 			Thread:      strings.Join(strings.Fields(match[4]), " "),
 			Class:       strings.Join(strings.Fields(match[5]), " "),
-			Message:     strings.Join(strings.Fields(match[6]), " "),
-			Raw:         match[0],
+			Message:     strings.TrimSpace(match[6]),
+			Raw:         line,
 			ParseStatus: 1, // First line deserialized
 		}
 
 		return &springLogLine, nil
-	} else {
-		match := continuedRegexp.MatchString(line)
-		if match {
-			springLogLine := *logObjectBuffer
-			springLogLine.ParseStatus = 2 // Log appended
-			springLogLine.Raw += line
+	}
 
-			return &springLogLine, nil
-		} else {
-			// TODO: fix this later, as we should match a consistent pattern instead of just throwing any
-			//       in-between piece of log into the object.
-			springLogLine := *logObjectBuffer
-			springLogLine.ParseStatus = 2 // Log appended
-			springLogLine.Raw += line
-
-			return &springLogLine, nil
+	if logObjectBuffer.ParseStatus > 0 && (logObjectBuffer.Level == "ERROR" || logObjectBuffer.Level == "WARN" || continuedRegexp.MatchString(line)) {
+		if continuedRegexp.MatchString(line) || strings.HasPrefix(line, "\t") || (len(line) > 0 && line[0] == ' ') {
+			logObjectBuffer.Raw += "\n" + line
+			logObjectBuffer.Message += "\n" + line
+			logObjectBuffer.ParseStatus = 2 // Log appended
+			return logObjectBuffer, nil
 		}
 	}
+
+	return nil, nil
 }
 
 func readStdin(ctx ParserContext) error {
@@ -82,23 +76,20 @@ func readStdin(ctx ParserContext) error {
 	for scanner.Scan() {
 		line := scanner.Text()
 		if len(line) == 0 {
-			break
+			continue
 		}
 
-		// Get serialized log data
+		bufferBeforeProcessing := logObjectBuffer
+
 		lineObj, err := processLogLine(line, &logObjectBuffer)
 		if err != nil {
 			return err
 		}
 
-		// If log buffer status is 3, this means the object is complete and ready to print
 		if logObjectBuffer.ParseStatus == 3 {
-			if err := printResults(ctx, &logObjectBuffer); err != nil {
+			if err := printResults(ctx, &bufferBeforeProcessing); err != nil {
 				return err
 			}
-
-			// Reset the buffer
-			logObjectBuffer = SpringLogStruct{}
 		}
 
 		if lineObj != nil {
@@ -107,7 +98,6 @@ func readStdin(ctx ParserContext) error {
 	}
 
 	if logObjectBuffer.ParseStatus != 0 {
-		logObjectBuffer.ParseStatus = 3 // Mark as completed for printing
 		if err := printResults(ctx, &logObjectBuffer); err != nil {
 			return err
 		}
@@ -156,7 +146,7 @@ func printResults(ctx ParserContext, logObject *SpringLogStruct) error {
 	}
 
 	if filterPassed {
-		if err := prettyPrintJson(logObject); err != nil {
+		if err := prettyPrintJson(logObject, &ctx); err != nil {
 			return err
 		}
 	}
@@ -164,7 +154,7 @@ func printResults(ctx ParserContext, logObject *SpringLogStruct) error {
 	return nil
 }
 
-func prettyPrintJson(lineObj *SpringLogStruct) error {
+func prettyPrintJson(lineObj *SpringLogStruct, ctx *ParserContext) error {
 	logObject, err := json.Marshal(lineObj)
 	if err != nil {
 		return err
@@ -176,8 +166,17 @@ func prettyPrintJson(lineObj *SpringLogStruct) error {
 		return indentErr
 	}
 
-	// TODO: Find a way to pretty-print this log output.
-	fmt.Println(indentedJson.String())
+	// TODO: Add colors :3
+	if ctx.Pretty {
+		fmt.Println("LEVEL:   " + lineObj.Level)
+		fmt.Println("THREAD:  " + lineObj.Thread)
+		fmt.Println("CLASS:   " + lineObj.Class)
+		fmt.Println("PID:     " + lineObj.Pid)
+		fmt.Println("MESSAGE: " + lineObj.Message)
+		fmt.Println("")
+	} else {
+		fmt.Println(indentedJson.String())
+	}
 
 	return nil
 }
@@ -211,12 +210,14 @@ func main() {
 	// Parse cli opts & construct config struct
 	levelFilter := flag.String("level", "", "Log level you want to filter for")
 	contentFilter := flag.String("grep", "", "Search term you want to filter for")
+	prettyPrint := flag.Bool("pretty", false, "Turn on pretty printing (invalid JSON output, but pretty :3)")
 	flag.Parse()
 
 	// TODO: Add configuration values from local config here
 	options := ParserContext{
 		Filter: *contentFilter,
 		Level:  *levelFilter,
+		Pretty: *prettyPrint,
 	}
 
 	// Parse Stdin
