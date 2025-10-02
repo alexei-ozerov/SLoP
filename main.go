@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/fatih/color"
 	"github.com/jeffry-luqman/zlog"
@@ -34,7 +35,7 @@ type SpringLogStruct struct {
 }
 
 func processLogLine(line string, logObjectBuffer *SpringLogStruct) (logLine *SpringLogStruct, err error) {
-	var firstLineRegexp = regexp.MustCompile(`^(?P<time>\d{4}-\d{1,2}-\d{1,2}T\d{1,2}:\d{1,2}:\d{1,2}[,.]\d{3}.*?)\s+(?P<level>[A-Z]+)\s+(?P<pid>\d+)\s+---\s+\[(?P<thread>.*?)\]\s+(?P<class>.*?)\s*:\s*(?P<message>.*)`)
+	var firstLineRegexp = regexp.MustCompile(`^(?P<time>\d{4}-\d{1,2}-\d{1,2}T\d{1,2}:\d{1,2}:\d{1,2}[,.]\d{3}(?:Z|[+-]\d{2}:\d{2})?)\s+(?P<level>[A-Z]+)\s+(?P<pid>\d+)\s+---\s+\[(?P<thread>.*?)\]\s+(?P<class>.*?)\s*:\s*(?P<message>.*)`)
 	var continuedRegexp = regexp.MustCompile(`^\s+at\s+.*|^\s*Caused by:.*`)
 
 	match := firstLineRegexp.FindStringSubmatch(line)
@@ -72,6 +73,7 @@ func processLogLine(line string, logObjectBuffer *SpringLogStruct) (logLine *Spr
 
 func readStdin(ctx ParserContext) error {
 	var logObjectBuffer SpringLogStruct
+	var previousLogObject *SpringLogStruct
 	scanner := bufio.NewScanner(os.Stdin)
 
 	for scanner.Scan() {
@@ -88,9 +90,15 @@ func readStdin(ctx ParserContext) error {
 		}
 
 		if logObjectBuffer.ParseStatus == 3 {
-			if err := printResults(ctx, &bufferBeforeProcessing); err != nil {
+			var previousTimestamp string
+			if previousLogObject != nil {
+				previousTimestamp = previousLogObject.Time
+			}
+			if err := printResults(ctx, &bufferBeforeProcessing, previousTimestamp); err != nil {
 				return err
 			}
+			prev := bufferBeforeProcessing
+			previousLogObject = &prev
 		}
 
 		if lineObj != nil {
@@ -99,12 +107,22 @@ func readStdin(ctx ParserContext) error {
 	}
 
 	if logObjectBuffer.ParseStatus != 0 {
-		if err := printResults(ctx, &logObjectBuffer); err != nil {
+		var previousTimestamp string
+		if previousLogObject != nil {
+			previousTimestamp = previousLogObject.Time
+		}
+		if err := printResults(ctx, &logObjectBuffer, previousTimestamp); err != nil {
 			return err
 		}
 	}
 
 	return scanner.Err()
+}
+
+func parseTime(timestamp string) (time.Time, error) {
+	normalizedTimestamp := strings.Replace(timestamp, ",", ".", 1)
+
+	return time.Parse(time.RFC3339Nano, normalizedTimestamp)
 }
 
 func checkFilter(ctx ParserContext, logObject *SpringLogStruct) bool {
@@ -123,7 +141,7 @@ func checkLevel(ctx ParserContext, logObject *SpringLogStruct) bool {
 	return false
 }
 
-func printResults(ctx ParserContext, logObject *SpringLogStruct) error {
+func printResults(ctx ParserContext, logObject *SpringLogStruct, previousTimestamp string) error {
 	filterPassed := true
 
 	// If level filter exists
@@ -147,7 +165,7 @@ func printResults(ctx ParserContext, logObject *SpringLogStruct) error {
 	}
 
 	if filterPassed {
-		if err := prettyPrintJson(logObject, &ctx); err != nil {
+		if err := prettyPrintJson(logObject, &ctx, previousTimestamp); err != nil {
 			return err
 		}
 	}
@@ -155,7 +173,7 @@ func printResults(ctx ParserContext, logObject *SpringLogStruct) error {
 	return nil
 }
 
-func prettyPrintJson(lineObj *SpringLogStruct, ctx *ParserContext) error {
+func prettyPrintJson(lineObj *SpringLogStruct, ctx *ParserContext, previousTimestamp string) error {
 	logObject, err := json.Marshal(lineObj)
 	if err != nil {
 		return err
@@ -179,9 +197,32 @@ func prettyPrintJson(lineObj *SpringLogStruct, ctx *ParserContext) error {
 			fmt.Println("LEVEL:   " + lineObj.Level)
 		}
 
+		var diff time.Duration
+		var diffString string
+		if previousTimestamp != "" {
+			p, pErr := parseTime(previousTimestamp)
+			t, tErr := parseTime(lineObj.Time)
+
+			if pErr == nil && tErr == nil {
+				diff = t.Sub(p)
+				minutes := int(diff.Minutes())
+				seconds := int(diff.Seconds()) % 60
+				diffString = fmt.Sprintf("%d minutes and %d seconds", minutes, seconds)
+			} else {
+				if pErr != nil {
+					slog.Error("Error parsing previous timestamp", "timestamp", previousTimestamp, "error", pErr)
+				}
+				if tErr != nil {
+					slog.Error("Error parsing current timestamp", "timestamp", lineObj.Time, "error", tErr)
+				}
+				diffString = "0 minutes and 0 seconds"
+			}
+		}
+
+		fmt.Println("TIME:    " + lineObj.Time)
+		fmt.Println("DIFF:    " + diffString)
 		fmt.Println("THREAD:  " + lineObj.Thread)
 		fmt.Println("CLASS:   " + lineObj.Class)
-		fmt.Println("PID:     " + lineObj.Pid)
 		fmt.Println("MESSAGE: " + lineObj.Message)
 		fmt.Println("")
 	} else {
