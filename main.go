@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/fatih/color"
 	"github.com/jeffry-luqman/zlog"
 )
 
@@ -166,9 +167,18 @@ func prettyPrintJson(lineObj *SpringLogStruct, ctx *ParserContext) error {
 		return indentErr
 	}
 
-	// TODO: Add colors :3
 	if ctx.Pretty {
-		fmt.Println("LEVEL:   " + lineObj.Level)
+		switch lineObj.Level {
+		case "ERROR":
+			color.Red("LEVEL:   " + lineObj.Level)
+		case "WARN":
+			color.Yellow("LEVEL:   " + lineObj.Level)
+		case "INFO":
+			color.Green("LEVEL:   " + lineObj.Level)
+		default: 
+			fmt.Println("LEVEL:   " + lineObj.Level)
+		}
+
 		fmt.Println("THREAD:  " + lineObj.Thread)
 		fmt.Println("CLASS:   " + lineObj.Class)
 		fmt.Println("PID:     " + lineObj.Pid)
